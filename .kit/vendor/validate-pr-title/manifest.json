@@ -1,0 +1,8 @@
+{
+  "repo": "n8n-io/validate-n8n-pull-request-title",
+  "ref": "v2.5.0",
+  "sha": "8aad0456a34b6f487c421539210529304ae8042c",
+  "pinned_by": ".github/workflows-upstream/ci-check-pr-title.yml",
+  "vendored_on": "2026-09-18",
+  "why": "Authoritative PR-title validator lives outside this repo. Snapshot pinned so the kit never reaches across the boundary at build time."
+}

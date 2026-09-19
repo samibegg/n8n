@@ -1,0 +1,188 @@
+# .kit/conventions/pr-title.yaml
+#
+# Machine-readable extraction of n8n's PR title convention.
+#
+# AUTHORITY: the only executable source of truth is the GitHub Action that
+# .github/workflows/ci-check-pr-title.yml pins. Everything inside n8n-io/n8n
+# that describes this convention is a hand transcription of that action and is
+# treated here as a drift target, not as a source.
+
+version: 1
+domain: pr-title
+
+authority:
+  repo: n8n-io/validate-n8n-pull-request-title
+  ref: v2.5.0
+  sha: 8aad0456a34b6f487c421539210529304ae8042c
+  pinned_by: .github/workflows/ci-check-pr-title.yml
+  vendored_at: .kit/vendor/validate-pr-title/
+  # The human-authoritative spec is an internal Notion page linked from the
+  # action's README and is not readable by outside contributors. Noted as a
+  # boundary fact, not consumed.
+  upstream_prose: private
+
+# In-repo transcriptions. The drift check asserts each still agrees with the
+# vendored authority. None of these is a source.
+transcriptions:
+  - path: .github/pull_request_title_conventions.md
+    covers: [types, scopes, subject, revert]
+  - path: .agents/skills/create-pr/SKILL.md
+    covers: [types, scopes, subject, regex]
+  - path: .agents/skills/community-pr-readiness-check/reference/checks.md
+    covers: [types, scopes, subject, regex]
+  - path: .github/pull_request_template.md
+    covers: [changelog-suffix]
+
+vocabulary:
+  types: [feat, fix, perf, test, docs, refactor, build, ci, chore]
+  scopes: [API, core, editor, benchmark, ai-builder, engine]
+  node_scope:
+    suffix: " Node"
+    resolution: dynamic
+    # Node scopes are validated against node display names parsed from the
+    # codebase at validation time (src/getAllNodesDisplayNames.js ->
+    # src/parser.ts). There is no static list. Any regex-based transcription of
+    # scope validation is therefore structurally incapable of being correct.
+    match: startsWith
+    on_resolution_failure: skip   # fails open: unresolvable node scopes pass
+  multi_scope:
+    supported: true
+    separator: ", "               # comma + single space, required
+  no_changelog_marker: "(no-changelog)"
+
+# Upstream parses with a single unanchored regex, then applies discrete checks.
+# Error text is reproduced verbatim so local output matches CI output.
+parse:
+  regex: '(?<type>\w+)(\((?<scope>.*)\))?!?: (?<subject>.*)'
+  anchored: false                 # no ^ or $ upstream -- see D005
+
+rules:
+  - id: T001
+    statement: Title must parse as "type: subject" or "type(scope): subject"
+    severity: error
+    message: "PR title does not match PR title convention: type: subject or type(scope): subject"
+
+  - id: T002
+    statement: Type must be one of the allowed types
+    severity: error
+    detect: { field: type, in: vocabulary.types }
+    message: "Unknown `type` in PR title"
+
+  - id: T003
+    statement: Scope must be an allowed scope or "<displayName> Node"
+    severity: error
+    detect: { field: scope, in: vocabulary.scopes, or: node_scope }
+    message: "Unknown `scope` in PR title"
+
+  - id: T004
+    statement: Multiple scopes are separated by a comma and a space
+    severity: error
+    detect: { field: scope, regex: ',\S', match_is_violation: true }
+    message: "Missing whitespace after comma to separate multiple scopes"
+
+  - id: T005
+    statement: Subject starts with an uppercase character
+    severity: error
+    detect: { field: subject, regex: '^[a-z]', match_is_violation: true }
+    message: "First char of subject must be uppercase"
+
+  - id: T006
+    statement: Subject does not start with a parenthesis
+    severity: error
+    detect: { field: subject, regex: '^\(', match_is_violation: true }
+    message: "Subject must not start with parens"
+
+  - id: T007
+    statement: Subject does not end with a period
+    severity: error
+    detect: { field: subject, regex: '\.$', match_is_violation: true }
+    message: "Subject must not end with a period"
+
+  - id: T008
+    statement: Subject uses present tense
+    severity: error
+    detect: { field: subject, first_word_ends_with: "ed", match_is_violation: true }
+    message: "Subject must use present tense"
+    # Upstream comment calls this a naive check. It tests only whether the
+    # first word ends in "ed", so legitimate imperatives such as Embed, Speed,
+    # Seed, Feed, Exceed and Succeed are rejected. Reproduced faithfully; see
+    # D006 for the surfaced caveat.
+
+  - id: T009
+    statement: "(no-changelog) appears at the very end of the subject"
+    severity: error
+    detect: { field: subject, contains: "(no-changelog)", must_match_suffix: ' \(no-changelog\)$' }
+    message: "`(no-changelog)` must be located at the end of the subject"
+
+  - id: T010
+    statement: Title contains no Linear ticket number
+    severity: error
+    detect: { field: title, regex: 'n8n-\d{3,5}', flags: i, match_is_violation: true }
+    message: "PR title must not contain a ticket number"
+
+  - id: T011
+    statement: Title contains no pull request number
+    severity: error
+    detect: { field: title, regex: '#\d{5,7}', match_is_violation: true }
+    message: "Title must not include pull request number"
+
+# Divergences between the vendored authority and the in-repo transcriptions,
+# confirmed by reading both. Each is a drift-check assertion, not an opinion.
+known_divergences:
+  - id: D001
+    subject: "`revert` is documented as a type but CI rejects it"
+    authority: vocabulary.types contains no "revert"
+    transcriptions:
+      - .github/pull_request_title_conventions.md   # has a "Revert commits" section
+      - .agents/skills/create-pr/SKILL.md           # includes revert in its regex alternation
+      - .../checks.md                               # carries a dedicated revert pattern
+    effect: A contributor following the documented revert convention fails CI with INVALID_TYPE.
+
+  - id: D002
+    subject: "Scope vocabulary is stale in every transcription"
+    authority: [API, core, editor, benchmark, ai-builder, engine]
+    transcriptions:
+      - path: .github/pull_request_title_conventions.md
+        lists: [API, benchmark, core, editor, "* Node"]     # missing ai-builder, engine
+      - path: .agents/skills/create-pr/SKILL.md
+        lists: [API, benchmark, core, editor, engine, "* Node"]  # missing ai-builder
+
+  - id: D003
+    subject: "Cached regexes reject a valid scope"
+    detail: >-
+      Both in-repo regexes constrain scope to [a-zA-Z0-9 ]+, which excludes the
+      hyphen. The valid upstream scope `ai-builder` fails them. checks.md states
+      the exclusion as an intentional rule, so the maintainer triage tooling
+      would flag a conforming PR as malformed.
+
+  - id: D004
+    subject: "Multi-scope titles are undocumented in-repo and rejected by both regexes"
+    detail: >-
+      Upstream splits scope on ", " and validates each part. No file inside
+      n8n-io/n8n mentions this. Both cached regexes exclude the comma, so
+      `fix(core, editor): Handle X` passes CI and fails every transcription.
+
+  - id: D005
+    subject: "Cached regexes are stricter than CI on prefixes"
+    detail: >-
+      The upstream schema regex is unanchored, so a title such as
+      "WIP feat: Add thing" still parses and passes. Both in-repo regexes anchor
+      with ^, and reject it. Drift runs in both directions.
+
+  - id: D006
+    subject: "Present-tense check has an undocumented false-positive class"
+    detail: >-
+      T008 tests only for a trailing "ed" on the first word. No transcription
+      mentions this rule at all, so the failure is unexplained when it fires.
+
+  - id: D007
+    subject: "Node scope validation fails open and is network-dependent"
+    detail: >-
+      getAllNodesDisplayNames shells out to npm install plus ts-node at
+      validation time. On failure the check is skipped and any "<X> Node" scope
+      passes unvalidated. Worth surfacing as a reliability caveat, not a fix.
+
+conformance:
+  # Upstream ships its own test suite. Extraction is verified against it rather
+  # than asserted.
+  fixtures: .kit/vendor/validate-pr-title/src/validatePrTitle.test.js

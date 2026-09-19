@@ -1,0 +1,177 @@
+# .kit/conventions/typescript.yaml
+#
+# Extraction of the mechanically checkable subset of n8n's own convention
+# material. Every rule below is stated by n8n; none is invented here. The
+# sources are advisory prose loaded into an agent's context -- nothing today
+# enforces them, and nothing runs them in CI. That gap is what this file closes.
+
+version: 1
+domain: typescript
+
+sources:
+  - path: .agents/skills/conventions/SKILL.md
+    note: >-
+      Consumed by Claude Code via symlinks in .claude/plugins/n8n/skills/ and by
+      OpenCode directly from .agents/skills/. Not read by Cursor.
+  - path: AGENTS.md
+    note: Root instruction file, always-on, 435 lines.
+  - path: packages/nodes-base/AGENTS.md
+  - path: packages/cli/AGENTS.md
+  - path: packages/frontend/AGENTS.md
+
+# Tiers decide what gates and what only informs.
+#   error    -> blocks in CI and in /precheck
+#   warn     -> reported, does not block
+#   advisory -> agent-surfaced only; no reliable static detection. Kept in the
+#               spec deliberately so the gap is visible rather than silently
+#               dropped.
+tiers: [error, warn, advisory]
+
+rules:
+  - id: TS001
+    statement: Never use `any`; use `unknown`
+    source: .agents/skills/conventions/SKILL.md#typescript
+    severity: error
+    scope: ["packages/**/*.ts", "packages/**/*.vue"]
+    detect:
+      regex: '(:\s*any\b|<any>|\bas\s+any\b)'
+      match_is_violation: true
+    fix_hint: "Replace with `unknown` and narrow at the use site."
+
+  - id: TS002
+    statement: Do not use ts-ignore or ts-expect-error to silence the compiler
+    source: CONTRIBUTING.md#general-requirements
+    severity: error
+    scope: ["packages/**/*.ts", "packages/**/*.vue"]
+    detect:
+      regex: '@ts-(ignore|expect-error)'
+      match_is_violation: true
+
+  - id: TS003
+    statement: Prefer `satisfies` over `as` (tests excepted)
+    source: .agents/skills/conventions/SKILL.md#typescript
+    severity: warn
+    scope: ["packages/**/*.ts"]
+    exclude: ["**/*.test.ts", "**/*.spec.ts", "**/__tests__/**"]
+    detect:
+      regex: '\bas\s+(?!const\b|unknown\b)[A-Z]\w*'
+      match_is_violation: true
+    note: >-
+      Noisy by construction -- a type assertion is sometimes correct. warn, not
+      error. Promotion to error is a decision for the team, not for this kit.
+
+  - id: ERR001
+    statement: Throw UnexpectedError from n8n-workflow; ApplicationError is deprecated
+    source: .agents/skills/conventions/SKILL.md#error-handling
+    severity: error
+    scope: ["packages/**/*.ts"]
+    detect:
+      regex: '\bApplicationError\b'
+      match_is_violation: true
+    fix_hint: "import { UnexpectedError } from 'n8n-workflow'"
+
+  - id: ERR002
+    statement: In nodes, throw NodeOperationError or NodeApiError rather than raw errors
+    source: CONTRIBUTING.md#general-requirements
+    severity: error
+    scope: ["packages/nodes-base/nodes/**/*.ts"]
+    exclude: ["**/*.test.ts", "**/__tests__/**"]
+    detect:
+      regex: 'throw new Error\('
+      match_is_violation: true
+    fix_hint: "import { NodeOperationError, NodeApiError } from 'n8n-workflow'"
+
+  - id: ERR003
+    statement: Use jsonParse from n8n-workflow instead of bare JSON.parse
+    source: CONTRIBUTING.md#general-requirements
+    severity: error
+    scope: ["packages/nodes-base/**/*.ts"]
+    exclude: ["**/*.test.ts", "**/__tests__/**"]
+    detect:
+      regex: '\bJSON\.parse\('
+      match_is_violation: true
+    fix_hint: "import { jsonParse } from 'n8n-workflow'"
+
+  - id: ARCH001
+    statement: >-
+      Pagination uses offset and limit in controllers and services; TypeORM
+      skip and take appear only inside repositories
+    source: .agents/skills/conventions/SKILL.md#backend
+    severity: error
+    scope: ["packages/cli/**/*.ts", "packages/@n8n/db/**/*.ts"]
+    exclude: ["**/repositories/**", "**/*.repository.ts", "**/*.test.ts"]
+    detect:
+      regex: '\b(skip|take)\s*:'
+      match_is_violation: true
+    note: >-
+      A genuine architectural boundary expressed as a path-scoped lexical check.
+      Catches the common leak; will not catch an aliased or computed property.
+
+  - id: ARCH002
+    statement: Shared types live in @n8n/api-types
+    source: .agents/skills/conventions/SKILL.md#typescript
+    severity: advisory
+    note: No reliable static signal for "should this type have been shared?"
+
+  - id: ARCH003
+    statement: Dependency injection via @n8n/di; config via @n8n/config; validation via Zod
+    source: .agents/skills/conventions/SKILL.md#backend
+    severity: advisory
+    note: >-
+      Presence is trivially greppable; correct application is not. Left
+      advisory rather than faked as a gate.
+
+  - id: FE001
+    statement: Use CSS variables; never hardcode px
+    source: packages/frontend/AGENTS.md
+    severity: warn
+    scope: ["packages/frontend/**/*.vue", "packages/frontend/**/*.scss"]
+    detect:
+      regex: '\b\d+px\b'
+      match_is_violation: true
+
+  - id: FE002
+    statement: All user-facing text goes through i18n
+    source: .agents/skills/conventions/SKILL.md#frontend
+    severity: advisory
+
+  - id: CI001
+    statement: >-
+      Every GitHub workflow declares a least-privilege top-level permissions
+      block; jobs needing more override at job level
+    source: .agents/skills/conventions/SKILL.md#github-workflows
+    severity: error
+    scope: [".github/workflows/*.yml"]
+    detect:
+      requires_key: "permissions"
+      absence_is_violation: true
+
+  - id: SEC001
+    statement: >-
+      Security fixes must not reveal the attack vector in any public artifact --
+      branch name, PR title, commit message, PR body, test name or comment
+    source: .agents/skills/create-pr/SKILL.md#security-fixes
+    severity: advisory
+    note: >-
+      Judgment, not pattern matching. Listed so the agent raises it on any
+      change touching a security-sensitive path, and so its absence from CI is
+      an explicit decision rather than an oversight.
+
+# Boundaries. Derived from CONTRIBUTING.md; the scaffold refuses to generate
+# into these and names the escalation path instead.
+restricted:
+  - path: packages/core/**
+    reason: Contact the n8n team before starting any change here.
+  - concern: identity, access management, credentials
+    reason: Handled in-house by the n8n team.
+  - nodes: [HTTP Request, Code, Webhook, Form Trigger, Schedule]
+    reason: High-impact nodes; changes handled in-house.
+  - action: new node
+    reason: New-node PRs are auto-closed unless explicitly requested by the team.
+    redirect: https://docs.n8n.io/integrations/creating-nodes/overview/
+
+# Rules that fire often enough to deserve promotion into a real lint rule are
+# handed off to n8n's own documented path, rather than living here forever.
+escalation:
+  target: packages/@n8n/eslint-plugin-community-nodes
+  procedure: .agents/skills/create-community-node-lint-rule/SKILL.md
