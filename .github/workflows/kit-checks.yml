@@ -1,0 +1,69 @@
+name: 'Kit: convention checks'
+
+# Same rules as the local `pnpm kit:precheck`, enforced where no coding agent
+# exists. The agent is one consumer of .kit/conventions; this is the other.
+
+on:
+  pull_request:
+    branches:
+      - master
+      - kit/conventions
+
+# CI001 from .kit/conventions/typescript.yaml -- least-privilege top-level block.
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    name: Convention checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out PR head
+        uses: actions/checkout@v4
+        with:
+          # Full history so the base ref is available for the diff.
+          fetch-depth: 0
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Enable corepack
+        run: corepack enable
+
+      - name: Install
+        # --ignore-scripts skips the monorepo's postinstall build. The kit only
+        # needs js-yaml; building every package here would cost ~30 minutes and
+        # prove nothing about conventions.
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Convention drift
+        # Informational: drift means the repo's own docs disagree with the
+        # validator CI runs. That is a maintenance signal, not a reason to
+        # block someone else's PR.
+        continue-on-error: true
+        run: pnpm kit:drift
+
+      - name: Pre-review checks
+        # Blocking: violations in this diff, and the PR title.
+        env:
+          KIT_BASE: origin/${{ github.base_ref }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: pnpm kit:precheck --title "$PR_TITLE"
+
+      - name: Summary
+        if: always()
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          {
+            echo "### Kit: convention checks"
+            echo ""
+            echo "Base: \`$BASE_REF\`"
+            echo "Title: \`$PR_TITLE\`"
+            echo ""
+            echo "Drift is informational. Pre-review checks block."
+          } >> "$GITHUB_STEP_SUMMARY"
