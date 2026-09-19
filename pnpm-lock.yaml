@@ -1100,6 +1100,9 @@ importers:
       eslint:
         specifier: 'catalog:'
         version: 9.29.0(jiti@2.6.1)(supports-color@5.5.0)
+      js-yaml:
+        specifier: 4.3.2
+        version: 4.3.2
       knip:
         specifier: 'catalog:'
         version: 6.35.1

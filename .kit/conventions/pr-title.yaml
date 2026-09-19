@@ -14,7 +14,7 @@ authority:
   repo: n8n-io/validate-n8n-pull-request-title
   ref: v2.5.0
   sha: 8aad0456a34b6f487c421539210529304ae8042c
-  pinned_by: .github/workflows/ci-check-pr-title.yml
+  pinned_by: .github/workflows-upstream/ci-check-pr-title.yml
   vendored_at: .kit/vendor/validate-pr-title/
   # The human-authoritative spec is an internal Notion page linked from the
   # action's README and is not readable by outside contributors. Noted as a
@@ -58,7 +58,7 @@ parse:
 
 rules:
   - id: T001
-    statement: Title must parse as "type: subject" or "type(scope): subject"
+    statement: 'Title must parse as "type: subject" or "type(scope): subject"'
     severity: error
     message: "PR title does not match PR title convention: type: subject or type(scope): subject"
 
