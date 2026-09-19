@@ -89,6 +89,11 @@ export async function slackApiRequest(
 				);
 			}
 
+			if (response.error === 'ratelimited') {
+				const retryAfter = JSON.parse(response.headers?.['retry-after'] ?? '0');
+				throw new Error(`Slack rate limit hit, retry after ${retryAfter}s`);
+			}
+
 			throw new NodeOperationError(
 				this.getNode(),
 				'Slack error response: ' + JSON.stringify(response),
